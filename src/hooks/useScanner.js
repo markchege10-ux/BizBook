@@ -3,20 +3,21 @@ import { extractReceiptData, fileToBase64 } from "../services/scanner";
 import { useTransactions } from "./useTransactions";
 
 const EMPTY_FIELDS = {
-  name: "", receiptNo: "", date: "", amount: "",
-  vat: "0", supplierPin: "", customerPin: "",
+  name: "", receiptNo: "", date: "",
+  amount: "", vat: "0",
+  supplierPin: "", customerPin: "",
   paymentMethod: "cash", productCategory: "",
   transactionType: "sale",
 };
 
 export function useScanner() {
   const { addTxn } = useTransactions();
-  const [stage,   setStage]   = useState("idle");    // idle | scanning | review | saving | saved | error
+  const [stage,   setStage]   = useState("idle");
   const [fields,  setFields]  = useState(EMPTY_FIELDS);
-  const [preview, setPreview] = useState(null);       // image preview URL
+  const [preview, setPreview] = useState(null);
   const [error,   setError]   = useState("");
 
-  // ── Capture image and extract with AI ──
+  // ── Capture image and run AI extraction ──
   async function captureImage(file) {
     if (!file) return;
     setError("");
@@ -30,7 +31,7 @@ export function useScanner() {
       setFields({ ...EMPTY_FIELDS, ...result });
       setStage("review");
     } catch (err) {
-      setError(err.message || "Extraction failed. Please fill in manually.");
+      setError(err.message || "Could not extract fields. Please fill in manually.");
       setFields(EMPTY_FIELDS);
       setStage("review");
     }
@@ -51,7 +52,7 @@ export function useScanner() {
         receiptNo:       fields.receiptNo,
         date:            fields.date,
         amount:          parseFloat(fields.amount) || 0,
-        vat:             parseFloat(fields.vat) || 0,
+        vat:             parseFloat(fields.vat)    || 0,
         supplierPin:     fields.supplierPin,
         customerPin:     fields.customerPin,
         paymentMethod:   fields.paymentMethod,
@@ -59,14 +60,13 @@ export function useScanner() {
         source:          "scanner",
       });
       setStage("saved");
-      setTimeout(reset, 2000);
     } catch (err) {
       setError(err.message || "Failed to save. Please try again.");
       setStage("review");
     }
   }
 
-  // ── Reset to idle ──
+  // ── Reset everything ──
   function reset() {
     setStage("idle");
     setFields(EMPTY_FIELDS);

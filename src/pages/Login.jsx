@@ -12,19 +12,25 @@ const GoogleIcon = () => (
 
 export default function Login() {
   const { login, register, loginWithGoogle, resetPassword } = useAuth();
-  const [tab, setTab]         = useState("signin");
+  const [tab,     setTab]     = useState("signin"); // signin | register | reset
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState("");
+  const [error,   setError]   = useState("");
   const [success, setSuccess] = useState("");
+
+  // Sign in
   const [siEmail, setSiEmail] = useState("");
   const [siPass,  setSiPass]  = useState("");
-  const [regName, setRegName] = useState("");
+
+  // Register
+  const [regName,     setRegName]     = useState("");
   const [regBusiness, setRegBusiness] = useState("");
-  const [regPhone, setRegPhone]       = useState("");
-  const [regEmail, setRegEmail]       = useState("");
-  const [regPass,  setRegPass]        = useState("");
-  const [regPass2, setRegPass2]       = useState("");
-  const [resetEmail, setResetEmail]   = useState("");
+  const [regPhone,    setRegPhone]    = useState("");
+  const [regEmail,    setRegEmail]    = useState("");
+  const [regPass,     setRegPass]     = useState("");
+  const [regPass2,    setRegPass2]    = useState("");
+
+  // Reset
+  const [resetEmail, setResetEmail] = useState("");
 
   const clear = () => { setError(""); setSuccess(""); };
 
@@ -33,13 +39,14 @@ export default function Login() {
     if (!siEmail || !siPass) return setError("Please fill in all fields.");
     setLoading(true);
     try { await login(siEmail, siPass); }
-    catch (err) { setError(friendlyError(err.code)); }
+    catch (err) { setError(friendly(err.code)); }
     finally { setLoading(false); }
   }
 
   async function handleRegister(e) {
     e.preventDefault(); clear();
-    if (!regName || !regBusiness || !regPhone || !regEmail || !regPass) return setError("Please fill in all fields.");
+    if (!regName || !regBusiness || !regPhone || !regEmail || !regPass)
+      return setError("Please fill in all fields.");
     if (regPass !== regPass2) return setError("Passwords do not match.");
     if (regPass.length < 6)  return setError("Password must be at least 6 characters.");
     setLoading(true);
@@ -47,14 +54,14 @@ export default function Login() {
       await register({ name: regName, businessName: regBusiness, phone: regPhone, email: regEmail, password: regPass });
       setSuccess("Account created! Check your email to verify your account.");
     }
-    catch (err) { setError(friendlyError(err.code)); }
+    catch (err) { setError(friendly(err.code)); }
     finally { setLoading(false); }
   }
 
   async function handleGoogle() {
     clear(); setLoading(true);
     try { await loginWithGoogle(); }
-    catch (err) { setError(friendlyError(err.code)); }
+    catch (err) { setError(friendly(err.code)); }
     finally { setLoading(false); }
   }
 
@@ -63,11 +70,11 @@ export default function Login() {
     if (!resetEmail) return setError("Enter your email address.");
     setLoading(true);
     try { await resetPassword(resetEmail); setSuccess("Reset link sent! Check your inbox."); }
-    catch (err) { setError(friendlyError(err.code)); }
+    catch (err) { setError(friendly(err.code)); }
     finally { setLoading(false); }
   }
 
-  function friendlyError(code) {
+  function friendly(code) {
     const map = {
       "auth/user-not-found":       "No account found with this email.",
       "auth/wrong-password":       "Incorrect password.",
@@ -77,6 +84,7 @@ export default function Login() {
       "auth/popup-closed-by-user": "Google sign-in was cancelled.",
       "auth/too-many-requests":    "Too many attempts. Please try again later.",
       "auth/invalid-credential":   "Invalid email or password.",
+      "auth/network-request-failed": "Network error. Check your connection.",
     };
     return map[code] ?? "Something went wrong. Please try again.";
   }
@@ -88,13 +96,14 @@ export default function Login() {
         <p className="auth-tagline">AI bookkeeping for Kenyan SMEs</p>
 
         <div className="auth-tabs">
-          <button className={`auth-tab ${tab === "signin" ? "active" : ""}`} onClick={() => { setTab("signin"); clear(); }}>Sign In</button>
+          <button className={`auth-tab ${tab === "signin"   ? "active" : ""}`} onClick={() => { setTab("signin");   clear(); }}>Sign In</button>
           <button className={`auth-tab ${tab === "register" ? "active" : ""}`} onClick={() => { setTab("register"); clear(); }}>Register</button>
         </div>
 
         {error   && <div className="auth-error">⚠️ {error}</div>}
         {success && <div className="auth-success">✅ {success}</div>}
 
+        {/* ── SIGN IN ── */}
         {tab === "signin" && !success && (
           <form onSubmit={handleSignIn} className="auth-form">
             <div className="field-row">
@@ -112,6 +121,7 @@ export default function Login() {
           </form>
         )}
 
+        {/* ── REGISTER ── */}
         {tab === "register" && !success && (
           <form onSubmit={handleRegister} className="auth-form">
             <div className="field-row">
@@ -144,6 +154,7 @@ export default function Login() {
           </form>
         )}
 
+        {/* ── RESET ── */}
         {tab === "reset" && !success && (
           <form onSubmit={handleReset} className="auth-form">
             <p className="auth-reset-info">Enter your email and we will send you a reset link.</p>
