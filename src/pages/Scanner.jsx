@@ -1,122 +1,153 @@
-import { useState, useRef } from "react";
+import { useRef } from "react";
+import { useScanner } from "../hooks/useScanner";
+
+const PAYMENT_METHODS = ["cash", "mpesa", "bank", "cheque", "card"];
 
 const FIELDS = [
-  { key: "name", label: "Supplier / Customer name" },
-  { key: "receiptNo", label: "Receipt / Invoice no." },
-  { key: "date", label: "Date" },
-  { key: "amount", label: "Amount (KES)" },
-  { key: "vat", label: "VAT amount (KES)" },
-  { key: "pin", label: "Supplier PIN" },
+  { key: "name",            label: "Supplier / Customer name",  type: "text",   placeholder: "e.g. Unga Group Ltd" },
+  { key: "receiptNo",       label: "Receipt / Invoice no.",     type: "text",   placeholder: "e.g. ETR-2026-4821" },
+  { key: "date",            label: "Date",                      type: "date",   placeholder: "" },
+  { key: "amount",          label: "Amount (KES)",              type: "number", placeholder: "e.g. 12500" },
+  { key: "vat",             label: "VAT amount (KES)",          type: "number", placeholder: "e.g. 1938" },
+  { key: "supplierPin",     label: "Supplier KRA PIN",          type: "text",   placeholder: "e.g. P051234567X" },
+  { key: "customerPin",     label: "Customer KRA PIN",          type: "text",   placeholder: "Optional" },
+  { key: "productCategory", label: "Product / Service category",type: "text",   placeholder: "e.g. groceries, transport" },
 ];
 
 export default function Scanner() {
-  const [stage, setStage] = useState("idle"); // idle | scanning | review | saved
-  const [fields, setFields] = useState({ name: "", receiptNo: "", date: "", amount: "", vat: "", pin: "" });
-  const [type, setType] = useState("sale"); // sale | purchase
+  const { stage, fields, preview, error, captureImage, updateField, saveTransaction, reset } = useScanner();
   const fileRef = useRef();
-
-  const handleCapture = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setStage("scanning");
-    // Simulate AI extraction delay
-    setTimeout(() => {
-      setFields({
-        name: "Unga Group Ltd",
-        receiptNo: "ETR-20260607-4821",
-        date: "2026-06-07",
-        amount: "12500",
-        vat: "1938",
-        pin: "P051234567X",
-      });
-      setStage("review");
-    }, 1800);
-  };
-
-  const handleSave = () => {
-    // TODO: call transactionStore.addTransaction({ type, ...fields })
-    setStage("saved");
-    setTimeout(() => {
-      setStage("idle");
-      setFields({ name: "", receiptNo: "", date: "", amount: "", vat: "", pin: "" });
-    }, 2000);
-  };
 
   return (
     <div className="page">
-      {/* Type toggle */}
+      {/* Transaction type toggle */}
       <div className="segment-control">
         {["sale", "purchase"].map((t) => (
           <button
             key={t}
-            className={`segment-btn ${type === t ? "active" : ""}`}
-            onClick={() => setType(t)}
+            className={`segment-btn ${fields.transactionType === t ? "active" : ""}`}
+            onClick={() => updateField("transactionType", t)}
           >
-            {t === "sale" ? "📊 Sale" : "📦 Purchase"}
+            {t === "sale" ? "📊 Sale / ETR" : "📦 Purchase"}
           </button>
         ))}
       </div>
 
-      {/* Idle: capture prompt */}
+      {/* Error message */}
+      {error && <div className="auth-error">⚠️ {error}</div>}
+
+      {/* IDLE: capture prompt */}
       {stage === "idle" && (
-        <div className="card scan-area" onClick={() => fileRef.current.click()}>
-          <div className="scan-icon">📷</div>
-          <p className="scan-title">Tap to scan receipt or invoice</p>
-          <p className="scan-sub">AI will extract all fields automatically</p>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            style={{ display: "none" }}
-            onChange={handleCapture}
-          />
-        </div>
+        <>
+          <div className="card scan-area" onClick={() => fileRef.current.click()}>
+            <div className="scan-icon">📷</div>
+            <p className="scan-title">Tap to capture receipt or invoice</p>
+            <p className="scan-sub">AI will extract all fields automatically</p>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              style={{ display: "none" }}
+              onChange={(e) => captureImage(e.target.files[0])}
+            />
+          </div>
+          <button className="link-btn center" onClick={() => {
+            updateField("transactionType", fields.transactionType);
+            import("../hooks/useScanner").then(() => {});
+            fileRef.current && (fileRef.current.removeAttribute("capture"));
+            fileRef.current && fileRef.current.click();
+          }}>
+            + Enter manually instead
+          </button>
+          {/* Manual entry fallback */}
+          <button className="btn-secondary" style={{ width: "100%", marginTop: "0.5rem" }}
+            onClick={() => {
+              const e = { target: { files: [] } };
+              import("../hooks/useScanner");
+              // Jump straight to review with empty fields
+              captureImage(null).catch(() => {});
+            }}>
+            ✏️ Add manually
+          </button>
+        </>
       )}
 
-      {/* Scanning: loading */}
+      {/* SCANNING: AI processing */}
       {stage === "scanning" && (
         <div className="card scan-area">
-          <div className="scan-spinner">⏳</div>
-          <p className="scan-title">Extracting fields with AI…</p>
-          <p className="scan-sub">Reading receipt details</p>
+          {preview && (
+            <img src={preview} alt="Captured receipt" style={{ width: "100%", maxHeight: "200px", objectFit: "contain", borderRadius: "8px", marginBottom: "1rem" }} />
+          )}
+          <div className="scan-spinner">🤖</div>
+          <p className="scan-title">AI is reading your receipt…</p>
+          <p className="scan-sub">Extracting name, amount, VAT, PIN and more</p>
         </div>
       )}
 
-      {/* Review: editable fields */}
-      {(stage === "review" || stage === "saved") && (
+      {/* REVIEW: editable fields */}
+      {(stage === "review" || stage === "saving") && (
         <div className="card">
           <p className="section-title" style={{ marginBottom: "1rem" }}>
-            Review &amp; confirm
+            {error ? "Fill in details manually" : "Review & confirm"}
           </p>
+
+          {preview && (
+            <img src={preview} alt="Receipt" style={{ width: "100%", maxHeight: "160px", objectFit: "contain", borderRadius: "8px", marginBottom: "1rem" }} />
+          )}
+
           {FIELDS.map((f) => (
             <div key={f.key} className="field-row">
               <label className="field-label">{f.label}</label>
               <input
                 className="field-input"
+                type={f.type}
+                placeholder={f.placeholder}
                 value={fields[f.key]}
-                onChange={(e) => setFields({ ...fields, [f.key]: e.target.value })}
-                placeholder={`Enter ${f.label.toLowerCase()}`}
+                onChange={(e) => updateField(f.key, e.target.value)}
               />
             </div>
           ))}
 
-          {stage === "saved" ? (
-            <div className="save-success">✅ Saved successfully!</div>
-          ) : (
-            <div className="btn-row">
-              <button className="btn-secondary" onClick={() => setStage("idle")}>Retake</button>
-              <button className="btn-primary" onClick={handleSave}>Save {type}</button>
+          {/* Payment method */}
+          <div className="field-row">
+            <label className="field-label">Payment method</label>
+            <div className="tab-row">
+              {PAYMENT_METHODS.map((m) => (
+                <button
+                  key={m}
+                  className={`tab-btn ${fields.paymentMethod === m ? "active" : ""}`}
+                  onClick={() => updateField("paymentMethod", m)}
+                >
+                  {m.charAt(0).toUpperCase() + m.slice(1)}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
+
+          <div className="btn-row" style={{ marginTop: "1.25rem" }}>
+            <button className="btn-secondary" onClick={reset} disabled={stage === "saving"}>
+              Cancel
+            </button>
+            <button
+              className="btn-primary"
+              style={{ flex: 1 }}
+              onClick={saveTransaction}
+              disabled={stage === "saving" || !fields.amount}
+            >
+              {stage === "saving" ? "Saving…" : `Save ${fields.transactionType}`}
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Manual entry fallback */}
-      {stage === "idle" && (
-        <button className="link-btn center" onClick={() => setStage("review")}>
-          + Enter manually instead
-        </button>
+      {/* SAVED: success */}
+      {stage === "saved" && (
+        <div className="card scan-area">
+          <div style={{ fontSize: "48px" }}>✅</div>
+          <p className="scan-title">Transaction saved!</p>
+          <p className="scan-sub">Added to your books</p>
+        </div>
       )}
     </div>
   );

@@ -1,47 +1,52 @@
-import { useState } from "react";
+import { useTransactions } from "../hooks/useTransactions";
+import { useAuth } from "../context/AuthContext";
+import { formatKES } from "../utils/formatCurrency";
 
-const mockTransactions = [
-  { id: 1, name: "Sale – Wanjiku Stores", meta: "ETR · Receipt #4821 · 09:14", amount: 12000, type: "credit", icon: "🛍️" },
-  { id: 2, name: "Purchase – Unga Ltd", meta: "Supplier · Invoice #203 · Yesterday", amount: 8500, type: "debit", icon: "📦" },
-  { id: 3, name: "M-Pesa Deposit", meta: "Banking · Transfer · Yesterday", amount: 30000, type: "credit", icon: "🏦" },
-  { id: 4, name: "Transport – Mombasa Run", meta: "Expense · Cash · Mon 02 Jun", amount: 3200, type: "debit", icon: "🚚" },
-];
+export default function Dashboard({ navigate }) {
+  const { user, profile } = useAuth();
+  const { transactions, summary, cashFlowDays, loading } = useTransactions();
 
-const weekData = [
-  { day: "Mon", in: 60, out: 30 },
-  { day: "Tue", in: 80, out: 45 },
-  { day: "Wed", in: 50, out: 20 },
-  { day: "Thu", in: 90, out: 55 },
-  { day: "Fri", in: 70, out: 35 },
-  { day: "Sat", in: 100, out: 60 },
-  { day: "Sun", in: 65, out: 25 },
-];
+  const recentTxns = transactions.slice(0, 5);
+  const name = profile?.name ?? user?.displayName ?? "there";
+  const firstName = name.split(" ")[0];
 
-export default function Dashboard() {
-  const [period, setPeriod] = useState("Week");
+  const typeIcon  = { sale: "🛍️", purchase: "📦", banking: "🏦", expense: "🚚" };
+  const typeColor = { sale: "credit", purchase: "debit", banking: "credit", expense: "debit" };
+  const typeSign  = { sale: "+", purchase: "-", banking: "+", expense: "-" };
+
+  const maxBar = Math.max(...cashFlowDays.map(d => Math.max(d.cashIn, d.cashOut)), 1);
+
+  const today = new Date().toLocaleDateString("en-KE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const vatDue = summary.vat.payable;
+
+  if (loading) return <div className="page"><div className="empty-state">Loading your books…</div></div>;
 
   return (
     <div className="page">
+      {/* Greeting */}
+      <div>
+        <p className="label">{today}</p>
+        <p style={{ fontSize: "18px", fontWeight: 600 }}>Good day, {firstName} 👋</p>
+      </div>
+
       {/* Balance Card */}
       <div className="card balance-card">
         <p className="label">Net Cash · This Month</p>
-        <h2 className="balance-amount">
-          <span>KES </span>142,500
-        </h2>
+        <h2 className="balance-amount"><span>KES </span>{summary.netCash.toLocaleString()}</h2>
         <div className="balance-row">
           <div>
             <p className="label">Cash In</p>
-            <p className="stat up">↑ 215,000</p>
+            <p className="stat up">↑ {summary.cashIn.toLocaleString()}</p>
           </div>
           <div className="divider-v" />
           <div>
             <p className="label">Cash Out</p>
-            <p className="stat down">↓ 72,500</p>
+            <p className="stat down">↓ {summary.cashOut.toLocaleString()}</p>
           </div>
           <div className="divider-v" />
           <div>
             <p className="label">VAT Due</p>
-            <p className="stat warn">34,400</p>
+            <p className="stat warn">{vatDue.toLocaleString()}</p>
           </div>
         </div>
       </div>
@@ -52,11 +57,11 @@ export default function Dashboard() {
         <div className="quick-actions">
           {[
             { icon: "📷", label: "Scan Receipt", to: "/scanner" },
-            { icon: "📊", label: "Add Sale", to: "/books" },
-            { icon: "🧾", label: "ETR Log", to: "/books" },
-            { icon: "📤", label: "KRA Report", to: "/reports" },
+            { icon: "📊", label: "Add Sale",     to: "/books" },
+            { icon: "🧾", label: "ETR Log",      to: "/books" },
+            { icon: "📤", label: "KRA Report",   to: "/reports" },
           ].map((a) => (
-            <button key={a.label} className="qa-btn" onClick={() => window.location.hash = a.to}>
+            <button key={a.label} className="qa-btn" onClick={() => navigate(a.to)}>
               <span className="qa-icon">{a.icon}</span>
               <span className="qa-label">{a.label}</span>
             </button>
@@ -64,48 +69,39 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* KRA Alert */}
-      <div className="alert-banner warn">
-        <span className="alert-icon">⚠️</span>
-        <div>
-          <p className="alert-title">VAT Filing Due</p>
-          <p className="alert-sub">June return · 8 days remaining</p>
+      {/* VAT Alert */}
+      {vatDue > 0 && (
+        <div className="alert-banner">
+          <span className="alert-icon">⚠️</span>
+          <div>
+            <p className="alert-title">VAT Payable</p>
+            <p className="alert-sub">{formatKES(vatDue)} due to KRA</p>
+          </div>
+          <button className="alert-btn" onClick={() => navigate("/reports")}>View</button>
         </div>
-        <button className="alert-btn">File Now</button>
-      </div>
+      )}
 
       {/* Cash Flow Chart */}
       <section>
         <div className="section-header">
-          <p className="section-title">Cash flow</p>
-          <div className="pills">
-            {["Week", "Month"].map((p) => (
-              <button
-                key={p}
-                className={`pill ${period === p ? "active" : ""}`}
-                onClick={() => setPeriod(p)}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
+          <p className="section-title">Cash flow · Last 7 days</p>
         </div>
         <div className="card">
           <div className="chart-bars">
-            {weekData.map((d) => (
-              <div key={d.day} className="bar-group">
-                <div className="bar in" style={{ height: `${d.in}%` }} />
-                <div className="bar out" style={{ height: `${d.out}%` }} />
+            {cashFlowDays.map((d) => (
+              <div key={d.date} className="bar-group">
+                <div className="bar in"  style={{ height: `${(d.cashIn  / maxBar) * 100}%` }} />
+                <div className="bar out" style={{ height: `${(d.cashOut / maxBar) * 100}%` }} />
               </div>
             ))}
           </div>
           <div className="chart-labels">
-            {weekData.map((d) => <span key={d.day}>{d.day}</span>)}
+            {cashFlowDays.map((d) => <span key={d.date}>{d.label}</span>)}
           </div>
           <div className="cashflow-totals">
-            <div><p className="label">Cash In</p><p className="stat up">54,500</p></div>
-            <div><p className="label">Cash Out</p><p className="stat down">18,200</p></div>
-            <div><p className="label">Net</p><p className="stat">36,300</p></div>
+            <div><p className="label">Cash In</p><p className="stat up">{summary.cashIn.toLocaleString()}</p></div>
+            <div><p className="label">Cash Out</p><p className="stat down">{summary.cashOut.toLocaleString()}</p></div>
+            <div><p className="label">Net</p><p className="stat">{summary.netCash.toLocaleString()}</p></div>
           </div>
         </div>
       </section>
@@ -114,20 +110,30 @@ export default function Dashboard() {
       <section>
         <div className="section-header">
           <p className="section-title">Recent transactions</p>
-          <button className="link-btn" onClick={() => window.location.hash = "/books"}>View all →</button>
+          <button className="link-btn" onClick={() => navigate("/books")}>View all →</button>
         </div>
-        {mockTransactions.map((txn) => (
-          <div key={txn.id} className="txn-item">
-            <span className="txn-icon">{txn.icon}</span>
-            <div className="txn-info">
-              <p className="txn-name">{txn.name}</p>
-              <p className="txn-meta">{txn.meta}</p>
-            </div>
-            <span className={`txn-amt ${txn.type}`}>
-              {txn.type === "credit" ? "+" : "-"}{txn.amount.toLocaleString()}
-            </span>
+        {recentTxns.length === 0 ? (
+          <div className="card" style={{ textAlign: "center", padding: "2rem" }}>
+            <p style={{ fontSize: "32px" }}>📋</p>
+            <p className="label" style={{ marginTop: "0.5rem" }}>No transactions yet</p>
+            <button className="btn-primary" style={{ marginTop: "1rem" }} onClick={() => navigate("/scanner")}>
+              📷 Scan your first receipt
+            </button>
           </div>
-        ))}
+        ) : (
+          recentTxns.map((txn) => (
+            <div key={txn.id} className="txn-item">
+              <span className="txn-icon">{typeIcon[txn.type] ?? "💳"}</span>
+              <div className="txn-info">
+                <p className="txn-name">{txn.name || "Unnamed"}</p>
+                <p className="txn-meta">{txn.receiptNo ? `${txn.receiptNo} · ` : ""}{txn.date ?? ""}</p>
+              </div>
+              <span className={`txn-amt ${typeColor[txn.type] ?? "credit"}`}>
+                {typeSign[txn.type]}{(parseFloat(txn.amount)||0).toLocaleString()}
+              </span>
+            </div>
+          ))
+        )}
       </section>
     </div>
   );

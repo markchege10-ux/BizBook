@@ -1,61 +1,49 @@
 import { useState } from "react";
+import { useTransactions } from "../hooks/useTransactions";
+import { formatKES } from "../utils/formatCurrency";
+import { formatDate } from "../utils/dateHelpers";
 
-const ALL = [
-  { id: 1, type: "sale", name: "Wanjiku Stores", ref: "ETR #4821", date: "2026-06-07", amount: 12000, vat: 1860 },
-  { id: 2, type: "purchase", name: "Unga Ltd", ref: "INV #203", date: "2026-06-06", amount: 8500, vat: 1317 },
-  { id: 3, type: "banking", name: "M-Pesa Deposit", ref: "TXN #9931", date: "2026-06-06", amount: 30000, vat: 0 },
-  { id: 4, type: "sale", name: "Kamau Hardware", ref: "ETR #4820", date: "2026-06-05", amount: 4700, vat: 728 },
-  { id: 5, type: "purchase", name: "Bidco Africa", ref: "INV #118", date: "2026-06-05", amount: 15000, vat: 2325 },
-  { id: 6, type: "expense", name: "Transport – Mombasa", ref: "CASH", date: "2026-06-04", amount: 3200, vat: 0 },
-];
-
-const TABS = ["All", "Sales", "Purchases", "Banking"];
-
+const TABS = ["All", "Sales", "Purchases", "Banking", "Expenses"];
+const typeIcon  = { sale: "🛍️", purchase: "📦", banking: "🏦", expense: "🚚" };
 const typeColor = { sale: "credit", purchase: "debit", banking: "credit", expense: "debit" };
 const typeSign  = { sale: "+", purchase: "-", banking: "+", expense: "-" };
-const typeIcon  = { sale: "🛍️", purchase: "📦", banking: "🏦", expense: "🚚" };
+const tabType   = { Sales: "sale", Purchases: "purchase", Banking: "banking", Expenses: "expense" };
 
 export default function Books() {
-  const [tab, setTab] = useState("All");
+  const { transactions, summary, loading, deleteTxn } = useTransactions();
+  const [tab, setTab]       = useState("All");
   const [search, setSearch] = useState("");
+  const [confirm, setConfirm] = useState(null);
 
-  const filtered = ALL.filter((t) => {
-    const matchTab =
-      tab === "All" ||
-      (tab === "Sales" && t.type === "sale") ||
-      (tab === "Purchases" && t.type === "purchase") ||
-      (tab === "Banking" && t.type === "banking");
-    const matchSearch = t.name.toLowerCase().includes(search.toLowerCase()) || t.ref.toLowerCase().includes(search.toLowerCase());
+  const filtered = transactions.filter((t) => {
+    const matchTab = tab === "All" || t.type === tabType[tab];
+    const matchSearch = !search || [t.name, t.receiptNo, t.productCategory]
+      .some(f => f?.toLowerCase().includes(search.toLowerCase()));
     return matchTab && matchSearch;
   });
 
-  const totalIn  = filtered.filter(t => typeSign[t.type] === "+").reduce((s, t) => s + t.amount, 0);
-  const totalOut = filtered.filter(t => typeSign[t.type] === "-").reduce((s, t) => s + t.amount, 0);
+  async function handleDelete(id) {
+    await deleteTxn(id);
+    setConfirm(null);
+  }
+
+  if (loading) return <div className="page"><div className="empty-state">Loading…</div></div>;
 
   return (
     <div className="page">
       {/* Summary */}
       <div className="card balance-row" style={{ padding: "1rem" }}>
-        <div>
-          <p className="label">Total In</p>
-          <p className="stat up">KES {totalIn.toLocaleString()}</p>
-        </div>
+        <div><p className="label">Total In</p><p className="stat up">{formatKES(summary.cashIn)}</p></div>
         <div className="divider-v" />
-        <div>
-          <p className="label">Total Out</p>
-          <p className="stat down">KES {totalOut.toLocaleString()}</p>
-        </div>
+        <div><p className="label">Total Out</p><p className="stat down">{formatKES(summary.cashOut)}</p></div>
         <div className="divider-v" />
-        <div>
-          <p className="label">Net</p>
-          <p className="stat">KES {(totalIn - totalOut).toLocaleString()}</p>
-        </div>
+        <div><p className="label">Net</p><p className="stat">{formatKES(summary.netCash)}</p></div>
       </div>
 
       {/* Search */}
       <input
         className="search-input"
-        placeholder="🔍  Search by name or reference…"
+        placeholder="🔍  Search by name, reference…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
@@ -71,20 +59,48 @@ export default function Books() {
 
       {/* Transactions */}
       {filtered.length === 0 ? (
-        <p className="empty-state">No transactions found.</p>
+        <div className="empty-state">
+          {transactions.length === 0 ? "No transactions yet — scan a receipt to get started!" : "No results found."}
+        </div>
       ) : (
         filtered.map((txn) => (
           <div key={txn.id} className="txn-item">
-            <span className="txn-icon">{typeIcon[txn.type]}</span>
+            <span className="txn-icon">{typeIcon[txn.type] ?? "💳"}</span>
             <div className="txn-info">
-              <p className="txn-name">{txn.name}</p>
-              <p className="txn-meta">{txn.ref} · {txn.date}{txn.vat ? ` · VAT ${txn.vat.toLocaleString()}` : ""}</p>
+              <p className="txn-name">{txn.name || "Unnamed"}</p>
+              <p className="txn-meta">
+                {txn.receiptNo ? `${txn.receiptNo} · ` : ""}
+                {txn.date ?? formatDate(txn.createdAt)}
+                {txn.vat > 0 ? ` · VAT ${txn.vat.toLocaleString()}` : ""}
+              </p>
             </div>
-            <span className={`txn-amt ${typeColor[txn.type]}`}>
-              {typeSign[txn.type]}{txn.amount.toLocaleString()}
-            </span>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
+              <span className={`txn-amt ${typeColor[txn.type] ?? "credit"}`}>
+                {typeSign[txn.type]}{(parseFloat(txn.amount)||0).toLocaleString()}
+              </span>
+              <button
+                style={{ fontSize: "11px", color: "var(--danger)", background: "none", border: "none", cursor: "pointer" }}
+                onClick={() => setConfirm(txn.id)}
+              >
+                Delete
+              </button>
+            </div>
           </div>
         ))
+      )}
+
+      {/* Delete confirmation */}
+      {confirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: "1.5rem" }}>
+          <div className="card" style={{ width: "100%", maxWidth: "340px" }}>
+            <p className="section-title">Delete transaction?</p>
+            <p className="label" style={{ marginTop: "0.5rem" }}>This cannot be undone.</p>
+            <div className="btn-row" style={{ marginTop: "1.25rem" }}>
+              <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setConfirm(null)}>Cancel</button>
+              <button className="btn-danger" style={{ flex: 1 }} onClick={() => handleDelete(confirm)}>Delete</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
