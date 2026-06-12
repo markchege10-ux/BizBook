@@ -1,14 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
-import Dashboard from "./pages/Dashboard";
-import Scanner   from "./pages/Scanner";
-import Books     from "./pages/Books";
-import CashFlow  from "./pages/CashFlow";
-import Receipts  from "./pages/Receipts";
-import Reports   from "./pages/Reports";
-import Settings  from "./pages/Settings";
-import Login     from "./pages/Login";
 import "./App.css";
+
+// Lazy load pages — only loads when user visits that page
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Scanner   = lazy(() => import("./pages/Scanner"));
+const Books     = lazy(() => import("./pages/Books"));
+const CashFlow  = lazy(() => import("./pages/CashFlow"));
+const Receipts  = lazy(() => import("./pages/Receipts"));
+const Reports   = lazy(() => import("./pages/Reports"));
+const Settings  = lazy(() => import("./pages/Settings"));
+const Login     = lazy(() => import("./pages/Login"));
 
 const NAV = [
   { path: "/",         label: "Home",     icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> },
@@ -18,7 +20,21 @@ const NAV = [
   { path: "/settings", label: "Settings", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> },
 ];
 
-const PAGE_TITLES = { "/": "Dashboard", "/scanner": "Scan Receipt", "/books": "Books", "/cashflow": "Cash Flow", "/receipts": "Receipts", "/reports": "Reports", "/settings": "Settings" };
+const PAGE_TITLES = {
+  "/": "Dashboard", "/scanner": "Scan Receipt", "/books": "Books",
+  "/cashflow": "Cash Flow", "/receipts": "Receipts",
+  "/reports": "Reports", "/settings": "Settings",
+};
+
+// Loading spinner for lazy pages
+function PageLoader() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "4rem", color: "var(--muted)", flexDirection: "column", gap: "1rem" }}>
+      <div style={{ width: "32px", height: "32px", border: "2px solid var(--border2)", borderTop: "2px solid var(--accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+      <p style={{ fontSize: "13px" }}>Loading…</p>
+    </div>
+  );
+}
 
 function AppInner() {
   const { user, profile, logout } = useAuth();
@@ -32,12 +48,20 @@ function AppInner() {
 
   const navigate = (to) => { window.location.hash = to; };
 
-  if (!user) return <Login />;
+  if (!user) return (
+    <Suspense fallback={<PageLoader />}>
+      <Login />
+    </Suspense>
+  );
+
+  const initials = (profile?.name ?? user.displayName ?? "U")
+    .split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+  const photoURL = user.photoURL;
 
   const pages = {
     "/":         <Dashboard navigate={navigate} />,
     "/scanner":  <Scanner />,
-    "/books":    <Books />,
+    "/books":    <Books navigate={navigate} />,
     "/cashflow": <CashFlow />,
     "/receipts": <Receipts />,
     "/reports":  <Reports />,
@@ -45,11 +69,10 @@ function AppInner() {
   };
 
   const Page = pages[path] ?? <Dashboard navigate={navigate} />;
-  const initials = (profile?.name ?? user.displayName ?? "U").split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase();
-  const photoURL = user.photoURL;
 
   return (
     <div className="app">
+      {/* Top bar */}
       <header className="topbar">
         <div className="topbar-left">
           <div className="logo">Biz<span>Book</span></div>
@@ -67,7 +90,9 @@ function AppInner() {
         </div>
       </header>
 
+      {/* Body */}
       <div className="app-body">
+        {/* Sidebar — desktop */}
         <aside className="sidebar">
           <button className="sidebar-scan" onClick={() => navigate("/scanner")}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" width="18" height="18"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -86,12 +111,16 @@ function AppInner() {
           </button>
         </aside>
 
+        {/* Main content */}
         <main className="main-content">
           {path !== "/" && <div className="page-title-bar">{PAGE_TITLES[path] ?? ""}</div>}
-          {Page}
+          <Suspense fallback={<PageLoader />}>
+            {Page}
+          </Suspense>
         </main>
       </div>
 
+      {/* FAB — mobile/tablet */}
       {path !== "/scanner" && (
         <button className="fab" onClick={() => navigate("/scanner")}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" width="18" height="18"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -99,6 +128,7 @@ function AppInner() {
         </button>
       )}
 
+      {/* Bottom nav — mobile/tablet */}
       <nav className="bottom-nav">
         {NAV.map((n) => (
           <button key={n.path} className={`nav-item ${path === n.path ? "active" : ""}`} onClick={() => navigate(n.path)}>
