@@ -97,7 +97,7 @@ export default function Dashboard({ navigate }) {
     <div className="page">
       <div>
         <p className="label">{today}</p>
-        <p style={{ fontSize:"18px", fontWeight:600 }}>Good day, {firstName} 👋</p>
+        <p style={{ fontSize:"18px", fontWeight:600 }}>Hello, {firstName} 👋</p>
       </div>
 
       <BalanceCard summary={summary} />
