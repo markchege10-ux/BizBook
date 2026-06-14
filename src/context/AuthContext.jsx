@@ -1,26 +1,44 @@
-import { createContext, useContext, useEffect, useState, useCallback, memo } from "react";
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import {
   onAuthStateChanged, signOut,
   createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  signInWithPopup, updateProfile,
+  signInWithPopup, updateProfile as firebaseUpdateProfile,
   sendPasswordResetEmail, sendEmailVerification,
 } from "firebase/auth";
-import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db, googleProvider } from "../firebase/config";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user,    setUser]    = useState(undefined); // undefined = loading
+  const [user,    setUser]    = useState(undefined);
   const [profile, setProfile] = useState(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        // Load profile once — don't re-listen
-        const snap = await getDoc(doc(db, "users", firebaseUser.uid));
-        if (snap.exists()) setProfile(snap.data());
+        // Always fetch from Firestore using UID — works across all devices
+        const ref  = doc(db, "users", firebaseUser.uid);
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          setProfile(snap.data());
+        } else {
+          // Profile missing — create it from auth data (handles edge cases)
+          const fallback = {
+            uid:          firebaseUser.uid,
+            name:         firebaseUser.displayName ?? "",
+            businessName: "",
+            phone:        firebaseUser.phoneNumber ?? "",
+            email:        firebaseUser.email ?? "",
+            plan:         "starter",
+            createdAt:    serverTimestamp(),
+            provider:     firebaseUser.providerData?.[0]?.providerId ?? "email",
+            photoURL:     firebaseUser.photoURL ?? "",
+          };
+          await setDoc(ref, fallback);
+          setProfile(fallback);
+        }
       } else {
         setUser(null);
         setProfile(null);
@@ -31,9 +49,12 @@ export function AuthProvider({ children }) {
 
   const register = useCallback(async ({ name, businessName, phone, email, password }) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
-    await updateProfile(cred.user, { displayName: name });
+    await firebaseUpdateProfile(cred.user, { displayName: name });
     await sendEmailVerification(cred.user);
-    const userData = { uid: cred.user.uid, name, businessName, phone, email, plan: "starter", createdAt: serverTimestamp(), provider: "email" };
+    const userData = {
+      uid: cred.user.uid, name, businessName, phone, email,
+      plan: "starter", createdAt: serverTimestamp(), provider: "email",
+    };
     await setDoc(doc(db, "users", cred.user.uid), userData);
     setProfile(userData);
     return cred.user;
@@ -41,6 +62,7 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (email, password) => {
     const cred = await signInWithEmailAndPassword(auth, email, password);
+    // Profile loaded by onAuthStateChanged — no need to load here
     return cred.user;
   }, []);
 
@@ -49,24 +71,38 @@ export function AuthProvider({ children }) {
     const ref  = doc(db, "users", cred.user.uid);
     const snap = await getDoc(ref);
     if (!snap.exists()) {
-      const userData = { uid: cred.user.uid, name: cred.user.displayName, businessName: "", phone: cred.user.phoneNumber ?? "", email: cred.user.email, plan: "starter", createdAt: serverTimestamp(), provider: "google", photoURL: cred.user.photoURL };
+      const userData = {
+        uid:          cred.user.uid,
+        name:         cred.user.displayName ?? "",
+        businessName: "",
+        phone:        cred.user.phoneNumber ?? "",
+        email:        cred.user.email ?? "",
+        plan:         "starter",
+        createdAt:    serverTimestamp(),
+        provider:     "google",
+        photoURL:     cred.user.photoURL ?? "",
+      };
       await setDoc(ref, userData);
       setProfile(userData);
-    } else {
-      setProfile(snap.data());
     }
+    // If exists, onAuthStateChanged handles loading profile
     return cred.user;
   }, []);
 
-  const resetPassword = useCallback((email) => sendPasswordResetEmail(auth, email), []);
-  const logout        = useCallback(() => signOut(auth), []);
+  const resetPassword  = useCallback((email) => sendPasswordResetEmail(auth, email), []);
+  const logout         = useCallback(() => {
+    setProfile(null);
+    return signOut(auth);
+  }, []);
 
-  const updateProfile_ = useCallback((data) => {
-    setProfile(prev => ({ ...prev, ...data }));
+  const refreshProfile = useCallback(async () => {
+    if (!auth.currentUser) return;
+    const snap = await getDoc(doc(db, "users", auth.currentUser.uid));
+    if (snap.exists()) setProfile(snap.data());
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, profile, register, login, loginWithGoogle, resetPassword, logout, updateProfile: updateProfile_ }}>
+    <AuthContext.Provider value={{ user, profile, register, login, loginWithGoogle, resetPassword, logout, refreshProfile }}>
       {user !== undefined && children}
     </AuthContext.Provider>
   );
